@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Music Player</title>
+	</head>
+<body>
+	<table id="ctrls">
+		<tr>
+			<td><label for="loop">loop</label></td>
+			<td><label for="shuffle">shuffle</label></td>
+			<td><label for="autoplay">autoplay</label></td>
+			<td><label for="reverse">reverse sort</label></td>
+			<td><label for="sort">sort</label></td>
+		</tr>
+		<tr>
+			<td>
+				<input type="checkbox" id="loop">
+				<input type="number" id="loop_num" value="0" min="0" hidden>
+			</td>
+			<td>
+				<input type="checkbox" id="shuffle">
+			</td>
+			<td>
+				<input type="checkbox" id="autoplay">
+			</td>
+			<td>
+				<input type="checkbox" id="reverse">
+			</td>
+			<td>
+				<select id="sort">
+					<option selected>name</option>
+					<option>time</option>
+				</select>
+			</td>
+			<td>
+				<button type="button" id="prev">&lt&lt</button>
+			</td>
+			<td>
+				<button type="button" id="next">&gt&gt</button>
+			</td>
+		</tr>
+	</table>
+	<label id="name"></label><br>
+	<audio controls preload id="audio" style="max-width: 100%; width: 100%; min-height: 100px; height: 100px"></audio>
+	<label id="qlbl" hidden=true>Queue:</label><br>
+	<div id="queue"></div>
+	<div id="buttons"></div>
+<script>
+let audio = document.getElementById("audio");
+let processing = false;
+let songs_date = null;
+let song_name;
+function get_cookie(name) {
+	name += "=";
+	for(let cookie of document.cookie.split(';')) {
+		cookie = cookie.trim();
+		if(cookie.indexOf(name) == 0) return decodeURIComponent(cookie.substring(name.length)).trim();
+	}
+	return "";
+}
+function list(force) {
+	hdrs = {};
+	if(songs_date !== null && !force) hdrs["If-Modified-Since"] = songs_date;
+	window.fetch("/list" + "?sort=" + ((document.getElementById("reverse").checked) ? "r" : "") + document.getElementById("sort").value, {
+		method: "GET",
+		headers: hdrs
+	}).then((response) => {
+		if(response.ok) {
+			songs_date = response.headers.get("Last-Modified");
+			return response.json();
+		} else if(response.status == 304) {
+			return null;
+		} else {
+			throw response.status;
+		}
+	}).then((d) => {
+		if(d !== null) {
+			document.getElementById("buttons").replaceChildren();
+			for(const {id, name} of d) {
+				let btn = document.createElement("button");
+				btn.innerText = name;
+				btn.id = "song" + id;
+				btn.onclick = () => {set_song(id);};
+				btn.style = "font-size:20px";
+				let q = document.createElement("button");
+				let dq = document.createElement("button");
+				q.innerText = "+";
+				dq.innerText = "-";
+				dq.disabled = true;
+				q.onclick = () => {queue_song(id);};
+				dq.onclick = () => {unqueue_song(id);};
+				let btnset = document.createElement("div");
+				btnset.append(btn, q, dq);
+				document.getElementById("buttons").append(btnset);
+			}
+		}
+		for(const btns of document.getElementById("buttons").children) btns.children[0].disabled = (btns.children[0].id == "song" + id);
+	}).catch((e) => {
+		throw e;
+	});
+}
+function do_cmd(cmd, reload, force_list_reload=false) {
+	if(reload && !audio.paused) audio.pause();
+	window.fetch("/" + "?sort=" + ((document.getElementById("reverse").checked) ? "r" : "") + document.getElementById("sort").value + ((document.getElementById("shuffle").checked) ? "&shuffle=on" : ""), {
+		method: "POST",
+		body: cmd,
+	}).then((response) => {
+		if(response.ok) {
+			if(reload) {
+				audio.src = "/current";
+				audio.load();
+				if(document.getElementById("autoplay").checked) audio.play();
+			}
+			return response.json();
+		} else {
+			do_cmd(cmd, reload, force_list_reload);
+		}
+	}).then((info) => {
+		if(reload) {
+			txt = info["name"];
+			song_name = txt;
+			document.getElementById("name").innerHTML = txt;
+			if("mediaSession" in navigator) {
+				if(navigator.mediaSession && navigator.mediaSession.metadata) {
+					navigator.mediaSession.metadata.title = txt;
+				} else {
+					navigator.mediaSession.metadata = new MediaMetadata({title: txt || "Unkown"});
+				}
+			}
+		}
+		list(force_list_reload);
+		if("queue" in info && info["queue"] != null) {
+			document.getElementById("queue").innerText = info["queue"].join('\n') + "\n";
+			for(const btns of document.getElementById("buttons").children) btns.children[2].disabled = !info["queue"].includes(btns.children[0].textContent);
+			document.getElementById("qlbl").hidden = !info["queue"].length;
+		}
+	});
+}
+function change_song(cmd) {
+	do_cmd(cmd, true);
+}
+function start() {
+	if(!processing) {
+		processing = true;
+		change_song("start");
+		processing = false;
+	}
+}
+function set_song(index) {
+	if(isNaN(index)) throw index;
+	if(!processing) {
+		processing = true;
+		change_song("set=" + Number(index));
+		processing = false;
+	}
+}
+function next() {
+	if(!processing) {
+		processing = true;
+		change_song("next");
+		processing = false;
+	}
+}
+function prev() {
+	if(!processing) {
+		processing = true;
+		change_song("prev");
+		processing = false;
+	}
+}
+function queue_song(index) {
+	if(isNaN(index)) throw index;
+	if(!processing) {
+		processing = true;
+		do_cmd("queue=" + Number(index), false);
+		processing = false;
+	}
+}
+function unqueue_song(index) {
+	if(isNaN(index)) throw index;
+	if(!processing) {
+		processing = true;
+		do_cmd("unqueue=" + Number(index), false);
+		processing = false;
+	}
+}
+document.getElementById("loop").addEventListener("change", function() {
+	document.getElementById("loop_num").hidden = !document.getElementById("loop").checked;
+	if(document.getElementById("loop").checked) document.getElementById("loop_num").value = 0;
+});
+document.getElementById("sort").addEventListener("change", (event) => {list(true);});
+document.getElementById("reverse").addEventListener("change", (event) => {list(true);});
+audio.addEventListener("ended", () => {
+	if(document.getElementById("loop").checked) {
+		if(Number(document.getElementById("loop_num").value)) {
+			document.getElementById("loop_num").value--;
+			if(!Number(document.getElementById("loop_num").value)) document.getElementById("loop").click();
+		}
+		audio.play();
+		return;
+	}
+	if(document.getElementById("autoplay").checked) next();
+});
+document.getElementById("prev").addEventListener("click", prev);
+document.getElementById("next").addEventListener("click", next);
+audio.addEventListener("playing", () => {
+	if("mediaSession" in navigator) {
+		navigator.mediaSession.setActionHandler('play', () => audio.play());
+		navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+		navigator.mediaSession.setActionHandler("previoustrack", prev);
+		navigator.mediaSession.setActionHandler("nexttrack", next);
+		navigator.mediaSession.setActionHandler("seekto", (details) =>  {
+			if(details.seekTime) {
+				audio.currentTime = details.seekTime;
+			}
+		});
+		if(navigator.mediaSession && navigator.mediaSession.metadata) {
+			navigator.mediaSession.metadata.title = song_name;
+		} else {
+			navigator.mediaSession.metadata = new MediaMetadata({title: song_name || "Unkown"});
+		}
+	}
+});
+audio.addEventListener("error", (event) => {
+	// try again
+	audio.load();
+	if(document.getElementById("autoplay").checked) audio.play();
+}, true);
+document.getElementById("loop").checked = Boolean(get_cookie("loop") || false);
+document.getElementById("shuffle").checked = Boolean(get_cookie("shuffle") || false);
+document.getElementById("autoplay").checked = Boolean(get_cookie("autoplay") || false);
+if(srt = get_cookie("sort")) {
+	document.getElementById("reverse").checked = false;
+	if(Array.from(srt)[0] == "r") {
+		document.getElementById("reverse").checked = true;
+		srt = srt.substring(1);
+	}
+	document.getElementById("sort").value = srt;
+}
+window.onpagehide = () => {
+	document.cookie = "loop=" + encodeURIComponent((document.getElementById("loop").checked) ? "on" : "") + "; samesite=strict; path=/";
+	document.cookie = "shuffle=" + encodeURIComponent((document.getElementById("shuffle").checked) ? "on" : "") + "; samesite=strict; path=/";
+	document.cookie = "autoplay=" + encodeURIComponent((document.getElementById("autoplay").checked) ? "on" : "") + "; samesite=strict; path=/";
+	document.cookie = "sort=" + encodeURIComponent(((document.getElementById("reverse").checked) ? "r" : "") + document.getElementById("sort").value) + "; samesite=strict; path=/";
+};
+start();
+</script>
+</body>
+</html>
