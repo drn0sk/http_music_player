@@ -20,7 +20,7 @@ all : $(BUILD_DIR)/http_music_player
 
 $(BUILD_DIR)/http_music_player : http_music_player.c | $(BUILD_DIR)
 	$(CC)	-pthread -lmagic -lhttp \
-		$(if $(HTML_FILE),-D'HTML_FILE=$(HTML_FILE)') \
+		$(if $(HTML_FILE),-D'HTML_FILE="$(HTML_FILE)"') \
 		$(if $(PATHS_CACHE),-D'PATHS_CACHE=$(PATHS_CACHE)') \
 		$(if $(LOGFILE),-D'LOGFILE=$(LOGFILE)') \
 		$(CPPFLAGS) $(CFLAGS) $(LDFLAGS) http_music_player.c -o $(BUILD_DIR)/http_music_player
