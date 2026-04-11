@@ -1350,11 +1350,13 @@ int main(int argc, char **argv) {
 		{"html-file",	required_argument,	NULL,	'h'},
 		{"cache-file",	required_argument,	NULL,	'c'},
 		{"log-file",	optional_argument,	NULL,	'l'},
+		{"port",	required_argument,	NULL,	'p'},
 		{NULL,		0,			NULL,	0}
 	};
 	int opt;
 	char *logfilename = LOGFILE;
-	while((opt = getopt_long(argc, argv, "h:c:l::", long_opts, NULL)) != -1) {
+	int port = -1;
+	while((opt = getopt_long(argc, argv, "h:c:l::p:", long_opts, NULL)) != -1) {
 		switch(opt) {
 		case 'h':
 			html_file = optarg;
@@ -1365,14 +1367,15 @@ int main(int argc, char **argv) {
 		case 'l':
 			logfilename = (optarg) ? optarg : "/dev/null";
 			break;
+		case 'p':
+			port = atoi(optarg);
+			break;
 		default:
 			return 1;
 		}
 	}
 	if(logfilename) {
-		if((logfile = open(logfilename,	O_WRONLY | O_APPEND | O_CREAT,
-						S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
-			dprintf(logfile, "open(%s): %s", logfilename, strerror(errno));
+		if((logfile = open(logfilename, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
 			return 1;
 		}
 		close_logfile = true;
@@ -1481,7 +1484,7 @@ int main(int argc, char **argv) {
 	struct HTTP_Request_Handlers hls = {0};
 	hls.get_req_handler = get_response;
 	hls.post_req_handler = post_response;
-	int retval = !server((argc > 1) ? argv[1] : NULL, hls);
+	int retval = !server((argc > 1) ? argv[1] : NULL, hls, (logfilename) ? logfilename : "/dev/stderr", port);
 	pthread_rwlock_destroy(&shvars->rwlock);
 	if(!child && shvars->shmem_used) {
 		int fd = open(cache_file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
