@@ -13,8 +13,10 @@ exec_prefix = $(prefix)
 bindir = $(exec_prefix)/bin
 datarootdir = $(prefix)/share
 datadir = $(datarootdir)
+localstatedir = $(prefix)/var
 
 HTML_FILE = $(DESTDIR)$(datadir)/http_music_player/http_music_player.html
+PATHS_CACHE = $(DESTDIR)$(localstatedir)/cache/http_music_player/paths.cache
 
 all : $(BUILD_DIR)/http_music_player
 
@@ -36,12 +38,11 @@ install : all | install_dirs
 	$(INSTALL) http_music_player.html $(HTML_FILE)
 
 install_dirs :
-	$(INSTALL) -d $(DESTDIR)$(bindir)/
-	$(INSTALL) -d $(DESTDIR)$(datadir)/http_music_player/
+	$(INSTALL) -d $(DESTDIR)$(bindir)/ $(dir $(HTML_FILE)) $(dir $(PATHS_CACHE)) $(dir $(LOGFILE))
 
 install-strip : STRIP = 1
 install-strip : install
 
 uninstall :
 	-rm $(DESTDIR)$(bindir)/http_music_player
-	-rm -r $(DESTDIR)$(datadir)/http_music_player/
+	-rm -r $(dir $(HTML_FILE)) $(dir $(PATHS_CACHE)) $(dir $(LOGFILE))
