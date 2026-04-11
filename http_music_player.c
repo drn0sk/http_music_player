@@ -366,16 +366,13 @@ enum CMD {
 	INVALID
 };
 
-#ifndef LOGFILE
-#define LOGFILE STDERR_FILENO
-#endif
-int logfile = LOGFILE;
+int logfile = STDERR_FILENO;
 bool close_logfile = false;
 
 #ifndef HTML_FILE
 #define HTML_FILE "http_music_player.html"
 #endif
-const char *html_file = HTML_FILE;
+char *html_file = HTML_FILE;
 // set dir to null to use current directory
 // reason does not have to be freed
 // but content_type and content do have to be freed if they are not NULL (just passing it to free is fine even if it's NULL)
@@ -1341,7 +1338,11 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 #ifndef PATHS_CACHE
 #define PATHS_CACHE "paths_cache.cache"
 #endif
-const char *cache_file = PATHS_CACHE;
+char *cache_file = PATHS_CACHE;
+
+#ifndef LOGFILE
+#define LOGFILE NULL
+#endif
 
 int main(int argc, char **argv) {
 	// parse args
@@ -1352,6 +1353,7 @@ int main(int argc, char **argv) {
 		{NULL,		0,			NULL,	0}
 	};
 	int opt;
+	char *logfilename = LOGFILE;
 	while((opt = getopt_long(argc, argv, "h:c:l::", long_opts, NULL)) != -1) {
 		switch(opt) {
 		case 'h':
@@ -1361,21 +1363,19 @@ int main(int argc, char **argv) {
 			cache_file = optarg;
 			break;
 		case 'l':
-			const char *logfilename = (optarg) ? optarg : "/dev/null";
-			int tmp;
-			if((tmp = open(logfilename,	O_WRONLY | O_APPEND | O_CREAT,
-							S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
-				dprintf(logfile, "open(%s): %s", logfilename, strerror(errno));
-				if(close_logfile) close(logfile);
-				return 1;
-			}
-			close_logfile = true;
-			logfile = tmp;
+			logfilename = (optarg) ? optarg : "/dev/null";
 			break;
 		default:
-			if(close_logfile) close(logfile);
 			return 1;
 		}
+	}
+	if(logfilename) {
+		if((logfile = open(logfilename,	O_WRONLY | O_APPEND | O_CREAT,
+						S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
+			dprintf(logfile, "open(%s): %s", logfilename, strerror(errno));
+			return 1;
+		}
+		close_logfile = true;
 	}
 	page_size = sysconf(_SC_PAGESIZE);
 	if(page_size < 0) {
