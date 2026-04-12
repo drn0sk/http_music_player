@@ -24,6 +24,7 @@
 #include <stdalign.h>
 #include <sys/random.h>
 #include <getopt.h>
+#include <stdint.h>
 
 struct vars {
 	pthread_rwlock_t rwlock;
@@ -366,8 +367,7 @@ enum CMD {
 	INVALID
 };
 
-int logfile = STDERR_FILENO;
-bool close_logfile = false;
+int logfile = -1;
 
 #ifndef HTML_FILE
 #define HTML_FILE "http_music_player.html"
@@ -412,7 +412,7 @@ int get_response(char *target, query_list q, char *dir, headers *h, cookies c, c
 		}
 		paths_len = cache_find(path, &t, &paths);
 		if(!paths_len) {
-			dprintf(logfile, "ERROR: uninitialized\n");
+			if(logfile >= 0) dprintf(logfile, "ERROR: uninitialized\n");
 			free(path);
 			*reason = "Bad Request";
 			return 400;
@@ -624,7 +624,7 @@ int get_response(char *target, query_list q, char *dir, headers *h, cookies c, c
 					pthread_rwlock_destroy(&shvars->rwlock);
 					munmap(shvars, page_size);
 					shm_unlink("/shmem");
-					if(close_logfile) close(logfile);
+					if(logfile >= 0) close(logfile);
 					exit(1);
 				}
 				size_t iov_size = paths_len + 2, tmp_len = total_len;
@@ -643,7 +643,7 @@ int get_response(char *target, query_list q, char *dir, headers *h, cookies c, c
 						pthread_rwlock_destroy(&shvars->rwlock);
 						munmap(shvars, page_size);
 						shm_unlink("/shmem");
-						if(close_logfile) close(logfile);
+						if(logfile >= 0) close(logfile);
 						exit(1);
 					}
 					tmp_len -= rv;
@@ -666,7 +666,7 @@ int get_response(char *target, query_list q, char *dir, headers *h, cookies c, c
 				pthread_rwlock_destroy(&shvars->rwlock);
 				munmap(shvars, page_size);
 				shm_unlink("/shmem");
-				if(close_logfile) close(logfile);
+				if(logfile >= 0) close(logfile);
 				exit(0);
 			}
 			fd = pipefd[0];
@@ -898,7 +898,7 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 	if(!strncasecmp(body, "unqueue", (body_size > 7) ? 7 : body_size)) cmd = UNQUEUE;
 	// add more commands?
 	if(cmd == INVALID_POST) {
-		dprintf(logfile, "ERROR: Invalid post command: '%.*s'\n", (int)body_size, body);
+		if(logfile >= 0) dprintf(logfile, "ERROR: Invalid post command: '%.*s'\n", (int)body_size, body);
 		*reason = "Bad Request";
 		return 400;
 	}
@@ -1123,7 +1123,7 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 	}
 	char *cookie_str;
 	if(cmd != QUEUE && cmd != UNQUEUE) {
-		dprintf(logfile, "LOG: i = %zu\n", i);
+		if(logfile >= 0) dprintf(logfile, "LOG: i = %zu\n", i);
 		if(asprintf(&cookie_str, "index=%zu; Path=/", i) < 0) {
 			free(que);
 			free(hist);
@@ -1335,93 +1335,244 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 	return 200;
 }
 
-#ifndef PATHS_CACHE
-#define PATHS_CACHE "paths_cache.cache"
+#ifndef CACHE_FILE
+#define CACHE_FILE "paths.cache"
 #endif
-char *cache_file = PATHS_CACHE;
 
 #ifndef LOGFILE
-#define LOGFILE NULL
+#define LOGFILE "http_music_player.log"
+#endif
+
+#ifndef PIDFILE
+#define PIDFILE "/run/http_music_player.pid"
 #endif
 
 int main(int argc, char **argv) {
 	// parse args
 	static struct option long_opts[] = {
-		{"html-file",	required_argument,	NULL,	'h'},
-		{"cache-file",	required_argument,	NULL,	'c'},
-		{"log-file",	optional_argument,	NULL,	'l'},
+		{"html-file",	required_argument,	NULL,	'H'},
+		{"cache-file",	required_argument,	NULL,	'C'},
+		{"log-file",	required_argument,	NULL,	'L'},
+		{"verbose",	optional_argument,	NULL,	'v'},
+		{"quiet",	no_argument,		NULL,	'q'},
 		{"port",	required_argument,	NULL,	'p'},
+		{"daemonize",	no_argument,		NULL,	'D'},
+		{"pid-file",	required_argument,	NULL,	'P'},
 		{NULL,		0,			NULL,	0}
 	};
 	int opt;
+	char *cache_file = CACHE_FILE;
 	char *logfilename = LOGFILE;
+	char *pidfile = PIDFILE;
 	int port = -1;
-	while((opt = getopt_long(argc, argv, "h:c:l::p:", long_opts, NULL)) != -1) {
+	bool daemonize = false;
+	while((opt = getopt_long(argc, argv, "H:C:L:v::p:DP:q", long_opts, NULL)) != -1) {
 		switch(opt) {
-		case 'h':
+		case 'H':
 			html_file = optarg;
 			break;
-		case 'c':
+		case 'C':
 			cache_file = optarg;
 			break;
-		case 'l':
-			logfilename = (optarg) ? optarg : "/dev/null";
+		case 'L':
+		case 'v':
+			logfilename = (optarg) ? optarg : LOGFILE;
+			break;
+		case 'q':
+			logfilename = NULL;
 			break;
 		case 'p':
 			port = atoi(optarg);
+			break;
+		case 'D':
+			daemonize = true;
+			break;
+		case 'P':
+			pidfile = optarg;
 			break;
 		default:
 			return 1;
 		}
 	}
-	if(logfilename) {
-		if((logfile = open(logfilename, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0) {
+	if(logfilename && ((logfile = open(logfilename, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)) < 0)) {
+		return 1;
+	}
+	if(daemonize) {
+		// fork once
+		switch(fork()) {
+		case -1:
+			// error
+			if(logfile >= 0) {
+				dprintf(logfile, "fork: %s", strerror(errno));
+				close(logfile);
+			}
+			return 1;
+		case 0:
+			// child
+			break;
+		default:
+			// exit in the parent
+			if(logfile >= 0) close(logfile);
+			return 0;
+		}
+		// setsid
+		if(setsid() < 0) {
+			if(logfile >= 0) {
+				dprintf(logfile, "setsid: %s", strerror(errno));
+				close(logfile);
+			}
 			return 1;
 		}
-		close_logfile = true;
+		// fork again
+		pid_t pid = fork();
+		if(pid < 0) {
+			// error
+			if(logfile >= 0) {
+				dprintf(logfile, "fork: %s", strerror(errno));
+				close(logfile);
+			}
+			return 1;
+		}
+		if(pid) {
+			// parent
+			// create pid file
+			int pidfd = open(pidfile, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+			if(pidfd < 0) {
+				if(logfile >= 0) {
+					dprintf(logfile, "open(%s): %s", pidfile, strerror(errno));
+					close(logfile);
+				}
+				kill(pid, SIGTERM); // kill child if we failed to create the pid file
+				return 1;
+			}
+			// write pid of child, which is the daemon, to the pid file
+			if(dprintf(pidfd, "%jd\n", (intmax_t)pid) < 0) {
+				if(logfile >= 0) {
+					dprintf(logfile, "Error writing pid to pidfile: %s", strerror(errno));
+					close(logfile);
+				}
+				kill(pid, SIGTERM); // kill child if we failed to write the pid to the pid file
+				return 1;
+			}
+			// close the pid file
+			if(close(pidfd) < 0) {
+				if(logfile >= 0) {
+					dprintf(logfile, "close: %s", strerror(errno));
+					close(logfile);
+				}
+				return 1;
+			}
+			if(logfile >= 0) {
+				dprintf(logfile, "LOG: parent pid: %jd\n", (intmax_t)pid);
+				close(logfile);
+			}
+			return 0;
+		}
+		// change directory to root so we are not using any other directory
+		if(chdir("/") < 0) {
+			if(logfile >= 0) {
+				dprintf(logfile, "chdir: %s", strerror(errno));
+				close(logfile);
+			}
+			return 1;
+		}
+		umask(0);
+		// close stdin, stdout, and stderr
+		close(0);
+		close(1);
+		close(2);
+		// open /dev/null as stdin
+		if(open("/dev/null", O_RDONLY) < 0) {
+			if(logfile >= 0) {
+				dprintf(logfile, "open(\"/dev/null\"): %s", strerror(errno));
+				close(logfile);
+			}
+			return 1;
+		}
+		if(logfile >= 0) {
+			// use logfile as stdout and stderr
+			if(dup(logfile) < 0) {
+				dprintf(logfile, "dup(logfile): %s", strerror(errno));
+				close(logfile);
+				return 1;
+			}
+			if(dup(logfile) < 0) {
+				dprintf(logfile, "dup(logfile): %s", strerror(errno));
+				close(logfile);
+				return 1;
+			}
+		} else {
+			// open /dev/null as stdout and stderr
+			if(open("/dev/null", O_RDONLY) < 0) {
+				if(logfile >= 0) {
+					dprintf(logfile, "open(\"/dev/null\"): %s", strerror(errno));
+					close(logfile);
+				}
+				return 1;
+			}
+			if(open("/dev/null", O_RDONLY) < 0) {
+				if(logfile >= 0) {
+					dprintf(logfile, "open(\"/dev/null\"): %s", strerror(errno));
+					close(logfile);
+				}
+				return 1;
+			}
+		}
 	}
 	page_size = sysconf(_SC_PAGESIZE);
 	if(page_size < 0) {
-		dprintf(logfile, "sysconf: %s", strerror(errno));
-		if(close_logfile) close(logfile);
+		if(logfile >= 0) {
+			dprintf(logfile, "sysconf: %s", strerror(errno));
+			close(logfile);
+		}
 		return 1;
 	}
 	shvars = mmap(NULL, page_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	if(shvars == MAP_FAILED) {
-		dprintf(logfile, "mmap: %s", strerror(errno));
-		if(close_logfile) close(logfile);
+		if(logfile >= 0) {
+			dprintf(logfile, "mmap: %s", strerror(errno));
+			close(logfile);
+		}
 		return 1;
 	}
 	shvars->shm_fd = shm_open("/shmem", O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 	if(shvars->shm_fd < 0) {
-		dprintf(logfile, "shm_open: %s", strerror(errno));
+		if(logfile >= 0) {
+			dprintf(logfile, "shm_open: %s", strerror(errno));
+			close(logfile);
+		}
 		munmap(shvars, page_size);
-		if(close_logfile) close(logfile);
 		return 1;
 	}
 	if(access(cache_file, R_OK) == 0) {
 		struct stat s = {0};
 		if(stat(cache_file, &s) < 0) {
-			dprintf(logfile, "stat: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "stat: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		if(ftruncate(shvars->shm_fd, s.st_size) < 0) {
-			dprintf(logfile, "ftruncate: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "ftruncate: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		shvars->shmem_size = s.st_size;
 		int fd = open(cache_file, O_RDONLY);
 		if(fd < 0) {
-			dprintf(logfile, "open: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "open: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		void *contents = mmap(NULL, s.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -1429,19 +1580,23 @@ int main(int argc, char **argv) {
 		close(fd);
 		errno = err;
 		if(contents == MAP_FAILED) {
-			dprintf(logfile, "mmap: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "mmap: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		shvars->shmem = mmap(NULL, shvars->shmem_size, PROT_WRITE, MAP_SHARED, shvars->shm_fd, 0);
 		if(contents == MAP_FAILED) {
-			dprintf(logfile, "mmap: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "mmap: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
 			munmap(contents, s.st_size);
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		memcpy(shvars->shmem, contents, s.st_size);
@@ -1450,10 +1605,12 @@ int main(int argc, char **argv) {
 		munmap(shvars->shmem, s.st_size);
 	} else {
 		if(ftruncate(shvars->shm_fd, page_size) < 0) {
-			dprintf(logfile, "ftruncate: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "ftruncate: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		shvars->shmem_size = page_size;
@@ -1463,44 +1620,48 @@ int main(int argc, char **argv) {
 	if(pthread_rwlockattr_init(&attr)) {
 		munmap(shvars, page_size);
 		shm_unlink("/shmem");
-		if(close_logfile) close(logfile);
+		if(logfile >= 0) close(logfile);
 		return 1;
 	}
 	if(pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
 		munmap(shvars, page_size);
 		pthread_rwlockattr_destroy(&attr);
 		shm_unlink("/shmem");
-		if(close_logfile) close(logfile);
+		if(logfile >= 0) close(logfile);
 		return 1;
 	}
 	if(pthread_rwlock_init(&shvars->rwlock, &attr)) {
 		munmap(shvars, page_size);
 		pthread_rwlockattr_destroy(&attr);
 		shm_unlink("/shmem");
-		if(close_logfile) close(logfile);
+		if(logfile >= 0) close(logfile);
 		return 1;
 	}
 	pthread_rwlockattr_destroy(&attr);
 	struct HTTP_Request_Handlers hls = {0};
 	hls.get_req_handler = get_response;
 	hls.post_req_handler = post_response;
-	int retval = !server((argc > 1) ? argv[1] : NULL, hls, (logfilename) ? logfilename : "/dev/stderr", port);
+	int retval = !server((argc > optind) ? argv[optind] : NULL, hls, logfilename, port);
 	pthread_rwlock_destroy(&shvars->rwlock);
 	if(!child && shvars->shmem_used) {
 		int fd = open(cache_file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 		if(fd < 0) {
-			dprintf(logfile, "open: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "open: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		if(ftruncate(fd, shvars->shmem_used) < 0) {
-			dprintf(logfile, "ftruncate: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "ftruncate: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
 			close(fd);
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		void *contents = mmap(NULL, shvars->shmem_used, PROT_WRITE, MAP_SHARED, fd, 0);
@@ -1508,19 +1669,23 @@ int main(int argc, char **argv) {
 		close(fd);
 		errno = err;
 		if(contents == MAP_FAILED) {
-			dprintf(logfile, "mmap contents: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "mmap contents: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		shvars->shmem = mmap(NULL, shvars->shmem_used, PROT_READ, MAP_SHARED, shvars->shm_fd, 0);
 		if(shvars->shmem == MAP_FAILED) {
-			dprintf(logfile, "mmap shmem: %s", strerror(errno));
+			if(logfile >= 0) {
+				dprintf(logfile, "mmap shmem: %s", strerror(errno));
+				close(logfile);
+			}
 			munmap(shvars, page_size);
 			munmap(contents, shvars->shmem_size);
 			shm_unlink("/shmem");
-			if(close_logfile) close(logfile);
 			return 1;
 		}
 		memcpy(contents, shvars->shmem, shvars->shmem_used);
@@ -1529,6 +1694,6 @@ int main(int argc, char **argv) {
 	}
 	munmap(shvars, page_size);
 	shm_unlink("/shmem");
-	if(close_logfile) close(logfile);
+	if(logfile >= 0) close(logfile);
 	return retval;
 }
