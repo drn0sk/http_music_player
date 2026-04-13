@@ -39,7 +39,7 @@ clean :
 
 install : all | install_dirs
 	$(INSTALL_PROGRAM) $(if $(STRIP),-s) $(BUILD_DIR)/http_music_player $(DESTDIR)$(bindir)/
-	$(INSTALL) http_music_player.html $(DESTDIR)$(HTML_FILE)
+	$(INSTALL_DATA) http_music_player.html $(DESTDIR)$(HTML_FILE)
 
 install_dirs :
 	$(INSTALL) -d $(DESTDIR)$(bindir)/ $(dir $(DESTDIR)$(HTML_FILE))
