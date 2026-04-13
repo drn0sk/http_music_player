@@ -42,7 +42,7 @@ install : all | install_dirs
 	$(INSTALL) http_music_player.html $(DESTDIR)$(HTML_FILE)
 
 install_dirs :
-	$(INSTALL) -d $(DESTDIR)$(bindir)/ $(dir $(DESTDIR)$(HTML_FILE)) $(dir $(DESTDIR)$(CACHE_FILE)) $(dir $(DESTDIR)$(LOGFILE)) $(dir $(DESTDIR)$(PIDFILE))
+	$(INSTALL) -d $(DESTDIR)$(bindir)/ $(dir $(DESTDIR)$(HTML_FILE))
 
 install-strip : STRIP = 1
 install-strip : install
