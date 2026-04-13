@@ -2,7 +2,6 @@
 
 .PHONY : all clean install install_dirs install-strip uninstall
 
-CFLAGS = -g -O
 BUILD_DIR = build
 
 INSTALL = install
