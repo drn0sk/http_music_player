@@ -23,7 +23,7 @@ PIDFILE = $(runstatedir)/http_music_player.pid
 all : $(BUILD_DIR)/http_music_player
 
 $(BUILD_DIR)/http_music_player : http_music_player.c | $(BUILD_DIR)
-	$(CC)	-pthread -lmagic -lhttp \
+	$(CC)	-pthread -lmagic -l:libhttp.so.2 \
 		$(if $(HTML_FILE),-D'HTML_FILE="$(DESTDIR)$(HTML_FILE)"') \
 		$(if $(CACHE_FILE),-D'CACHE_FILE="$(DESTDIR)$(CACHE_FILE)"') \
 		$(if $(LOGFILE),-D'LOGFILE="$(DESTDIR)$(LOGFILE)"') \
