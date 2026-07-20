@@ -25,6 +25,7 @@
 #include <sys/random.h>
 #include <getopt.h>
 #include <stdint.h>
+#include <limits.h>
 
 struct vars {
 	pthread_rwlock_t rwlock;
@@ -630,7 +631,7 @@ int get_response(char *target, query_list q, char *dir, headers *h, cookies c, c
 				size_t iov_size = paths_len + 2, tmp_len = total_len;
 				bool partial = false;
 				ssize_t rv;
-				while((rv = vmsplice(pipefd[1], iov, iov_size, SPLICE_F_GIFT)) < tmp_len) {
+				while((rv = vmsplice(pipefd[1], iov, ((iov_size > IOV_MAX) ? IOV_MAX : iov_size), SPLICE_F_GIFT)) < tmp_len) {
 					if(rv < 0) {
 						switch(errno) {
 						case EAGAIN:
