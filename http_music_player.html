@@ -198,6 +198,19 @@ audio.addEventListener("ended", () => {
 });
 document.getElementById("prev").addEventListener("click", prev);
 document.getElementById("next").addEventListener("click", next);
+audio.addEventListener("playing", () => {
+	if("mediaSession" in navigator) {
+		navigator.mediaSession.setActionHandler('play', () => audio.play());
+		navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+		navigator.mediaSession.setActionHandler("previoustrack", prev);
+		navigator.mediaSession.setActionHandler("nexttrack", next);
+		navigator.mediaSession.setActionHandler("seekto", (details) =>  {
+			if(details.seekTime) {
+				audio.currentTime = details.seekTime;
+			}
+		});
+	}
+});
 audio.addEventListener("error", (event) => {
 	// try again
 	audio.load();
@@ -221,17 +234,6 @@ window.onpagehide = () => {
 	document.cookie = "sort=" + encodeURIComponent(((document.getElementById("reverse").checked) ? "r" : "") + document.getElementById("sort").value) + "; samesite=strict; path=/";
 };
 start();
-if("mediaSession" in navigator) {
-	navigator.mediaSession.setActionHandler('play', () => audio.play());
-	navigator.mediaSession.setActionHandler('pause', () => audio.pause());
-	navigator.mediaSession.setActionHandler("previoustrack", prev);
-	navigator.mediaSession.setActionHandler("nexttrack", next);
-	navigator.mediaSession.setActionHandler("seekto", (details) =>  {
-		if(details.seekTime) {
-			audio.currentTime = details.seekTime;
-		}
-	});
-}
 </script>
 </body>
 </html>
