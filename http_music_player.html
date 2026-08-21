@@ -108,7 +108,7 @@ function do_cmd(cmd, reload, force_list_reload=false) {
 	}).then((response) => {
 		if(response.ok) {
 			if(reload) {
-				audio.src = "/current";
+				audio.src = "/current?c=" + document.cookie;
 				audio.load();
 				if(document.getElementById("autoplay").checked) audio.play();
 			}
