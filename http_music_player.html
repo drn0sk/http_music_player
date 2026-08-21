@@ -121,13 +121,7 @@ function do_cmd(cmd, reload, force_list_reload=false) {
 			txt = info["name"];
 			song_name = txt;
 			document.getElementById("name").innerHTML = txt;
-			if("mediaSession" in navigator) {
-				if(navigator.mediaSession && navigator.mediaSession.metadata) {
-					navigator.mediaSession.metadata.title = txt;
-				} else {
-					navigator.mediaSession.metadata = new MediaMetadata({title: txt || "Unkown"});
-				}
-			}
+			if("mediaSession" in navigator) navigator.mediaSession.metadata = new MediaMetadata({title: txt});
 		}
 		list(force_list_reload);
 		if("queue" in info && info["queue"] != null) {
@@ -204,24 +198,6 @@ audio.addEventListener("ended", () => {
 });
 document.getElementById("prev").addEventListener("click", prev);
 document.getElementById("next").addEventListener("click", next);
-audio.addEventListener("playing", () => {
-	if("mediaSession" in navigator) {
-		navigator.mediaSession.setActionHandler('play', () => audio.play());
-		navigator.mediaSession.setActionHandler('pause', () => audio.pause());
-		navigator.mediaSession.setActionHandler("previoustrack", prev);
-		navigator.mediaSession.setActionHandler("nexttrack", next);
-		navigator.mediaSession.setActionHandler("seekto", (details) =>  {
-			if(details.seekTime) {
-				audio.currentTime = details.seekTime;
-			}
-		});
-		if(navigator.mediaSession && navigator.mediaSession.metadata) {
-			navigator.mediaSession.metadata.title = song_name;
-		} else {
-			navigator.mediaSession.metadata = new MediaMetadata({title: song_name || "Unkown"});
-		}
-	}
-});
 audio.addEventListener("error", (event) => {
 	// try again
 	audio.load();
@@ -245,6 +221,17 @@ window.onpagehide = () => {
 	document.cookie = "sort=" + encodeURIComponent(((document.getElementById("reverse").checked) ? "r" : "") + document.getElementById("sort").value) + "; samesite=strict; path=/";
 };
 start();
+if("mediaSession" in navigator) {
+	navigator.mediaSession.setActionHandler('play', () => audio.play());
+	navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+	navigator.mediaSession.setActionHandler("previoustrack", prev);
+	navigator.mediaSession.setActionHandler("nexttrack", next);
+	navigator.mediaSession.setActionHandler("seekto", (details) =>  {
+		if(details.seekTime) {
+			audio.currentTime = details.seekTime;
+		}
+	});
+}
 </script>
 </body>
 </html>

@@ -19,15 +19,19 @@ HTML_FILE = $(datadir)/http_music_player/http_music_player.html
 CACHE_FILE = $(localstatedir)/cache/http_music_player/paths.cache
 LOGFILE = $(localstatedir)/log/http_music_player/http_music_player.log
 PIDFILE = $(runstatedir)/http_music_player.pid
+CERT_CHAIN_FILE = $(datadir)/http_music_player/chain.pem
+PKEY_FILE = $(datadir)/http_music_player/pkey.pem
 
 all : $(BUILD_DIR)/http_music_player
 
 $(BUILD_DIR)/http_music_player : http_music_player.c | $(BUILD_DIR)
-	$(CC)	-pthread -lmagic -l:libhttp.so.2 \
+	$(CC)	-pthread -lmagic -l:libhttp.so.4 \
 		$(if $(HTML_FILE),-D'HTML_FILE="$(DESTDIR)$(HTML_FILE)"') \
 		$(if $(CACHE_FILE),-D'CACHE_FILE="$(DESTDIR)$(CACHE_FILE)"') \
 		$(if $(LOGFILE),-D'LOGFILE="$(DESTDIR)$(LOGFILE)"') \
 		$(if $(PIDFILE),-D'PIDFILE="$(DESTDIR)$(PIDFILE)"') \
+		$(if $(CERT_CHAIN_FILE),-D'CERT_CHAIN_FILE="$(DESTDIR)$(CERT_CHAIN_FILE)"') \
+		$(if $(PKEY_FILE),-D'PKEY_FILE="$(DESTDIR)$(PKEY_FILE)"') \
 		$(CPPFLAGS) $(CFLAGS) $(LDFLAGS) http_music_player.c -o $(BUILD_DIR)/http_music_player
 
 $(BUILD_DIR) :

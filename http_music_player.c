@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include <http_lib-2/http_server.h>
+#include <http_lib-4/http_server.h>
 #include <string.h>
 #include <fcntl.h>
 #include <linux/openat2.h>
@@ -1321,7 +1321,7 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 	free(output);
 	close(pipefd[1]);
 	free_namelist(paths, paths_len);
-	*content_type = strdup("text/plain; charset=utf-8");
+	*content_type = strdup("application/json; charset=utf-8");
 	if(!*content_type) {
 		close(pipefd[0]);
 		free_headers(resp_hdrs);
@@ -1348,26 +1348,45 @@ int post_response(char *target, query_list q, char *dir, char* body, size_t body
 #define PIDFILE "/run/http_music_player.pid"
 #endif
 
+#ifndef CERT_CHAIN_FILE
+#define CERT_CHAIN_FILE "chain.pem"
+#endif
+
+#ifndef PKEY_FILE
+#define PKEY_FILE "pkey.pem"
+#endif
+
 int main(int argc, char **argv) {
 	// parse args
 	static struct option long_opts[] = {
-		{"html-file",	required_argument,	NULL,	'H'},
-		{"cache-file",	required_argument,	NULL,	'C'},
-		{"log-file",	required_argument,	NULL,	'L'},
-		{"verbose",	optional_argument,	NULL,	'v'},
-		{"quiet",	no_argument,		NULL,	'q'},
-		{"port",	required_argument,	NULL,	'p'},
-		{"daemonize",	no_argument,		NULL,	'D'},
-		{"pid-file",	required_argument,	NULL,	'P'},
-		{NULL,		0,			NULL,	0}
+		{"html-file",		required_argument,	NULL,	'H'},
+		{"cache-file",		required_argument,	NULL,	'C'},
+		{"log-file",		required_argument,	NULL,	'L'},
+		{"verbose",		optional_argument,	NULL,	'v'},
+		{"quiet",		no_argument,		NULL,	'q'},
+		{"http-port",		required_argument,	NULL,	'p'},
+		{"https-port",		required_argument,	NULL,	'P'},
+		{"daemonize",		no_argument,		NULL,	'D'},
+		{"pid-file",		required_argument,	NULL,	'f'},
+		{"https",		no_argument,		NULL,	's'},
+		{"https-only",		no_argument,		NULL,	'S'},
+		{"timeout",		required_argument,	NULL,	't'},
+		{"timeout-usec",	required_argument,	NULL,	'u'},
+		{"cert-chain-file",	required_argument,	NULL,	'c'},
+		{"pkey-file",		required_argument,	NULL,	'k'},
+		{NULL,			0,			NULL,	 0}
 	};
 	int opt;
 	char *cache_file = CACHE_FILE;
 	char *logfilename = LOGFILE;
 	char *pidfile = PIDFILE;
-	int port = -1;
+	int http_port = -1, https_port = -1;
+	int protocols = HTTP;
+	struct timeval timeout = {.tv_sec = -1, .tv_usec = -1};
+	char *cert_chain_file = CERT_CHAIN_FILE;
+	char *pkey_file = PKEY_FILE;
 	bool daemonize = false;
-	while((opt = getopt_long(argc, argv, "H:C:L:v::p:DP:q", long_opts, NULL)) != -1) {
+	while((opt = getopt_long(argc, argv, "H:C:L:v::p:P:Df:qsSt:u:c:k:", long_opts, NULL)) != -1) {
 		switch(opt) {
 		case 'H':
 			html_file = optarg;
@@ -1383,13 +1402,34 @@ int main(int argc, char **argv) {
 			logfilename = NULL;
 			break;
 		case 'p':
-			port = atoi(optarg);
+			http_port = atoi(optarg);
+			break;
+		case 'P':
+			https_port = atoi(optarg);
 			break;
 		case 'D':
 			daemonize = true;
 			break;
-		case 'P':
+		case 'f':
 			pidfile = optarg;
+			break;
+		case 's':
+			protocols |= HTTPS;
+			break;
+		case 'S':
+			protocols = HTTPS;
+			break;
+		case 't':
+			timeout.tv_sec = atoll(optarg);
+			break;
+		case 'u':
+			timeout.tv_usec = atoll(optarg);
+			break;
+		case 'c':
+			cert_chain_file = optarg;
+			break;
+		case 'k':
+			pkey_file = optarg;
 			break;
 		default:
 			return 1;
@@ -1642,7 +1682,7 @@ int main(int argc, char **argv) {
 	struct HTTP_Request_Handlers hls = {0};
 	hls.get_req_handler = get_response;
 	hls.post_req_handler = post_response;
-	int retval = !server((argc > optind) ? argv[optind] : NULL, hls, logfilename, port);
+	int retval = !server((argc > optind) ? argv[optind] : NULL, hls, logfilename, http_port, https_port, protocols, cert_chain_file, pkey_file, timeout);
 	pthread_rwlock_destroy(&shvars->rwlock);
 	if(!child && shvars->shmem_used) {
 		int fd = open(cache_file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
